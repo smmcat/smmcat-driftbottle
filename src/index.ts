@@ -11,6 +11,7 @@ import fs from 'fs'
 export const name = 'smmcat-driftbottle'
 
 export interface Config {
+  botId: string,
   adminQQ: Array<string>
   basePath: string
   dataPath: string
@@ -35,6 +36,7 @@ export const usage = `
 `
 
 export const Config: Schema<Config> = Schema.object({
+  botId: Schema.string().description('qqbot的id (由于不会写自动获取需要手动，后续版本自动)'),
   adminQQ: Schema.array(String).role('table').description('管理员QQ 可查指定id内容，删除瓶子'),
   styleType: Schema.union([
     Schema.const(0).description('记事本'),
@@ -519,7 +521,7 @@ export function apply(ctx: Context, config: Config) {
     /** 格式化瓶子内容 */
     async formatDriftContent(temp: DiftInfo) {
       if (!temp.content.audio?.length) {
-        const htmlstr = createHTML.driftContent(temp, config.styleType)
+        const htmlstr = createHTML.driftContent(temp, config.styleType, config.botId)
         return await ctx.puppeteer.render(htmlstr) + `你可以发送 /留言 ${temp.id} 你的内容 \n来在这个瓶子中发表自己的意见`
       } else {
         return `你捞到了id:${temp.id} 的语音瓶，${temp.content.title ? `标题为：${temp.content.title}。\n` : ''}内容如下：` + h.audio(temp.content.audio[0])
