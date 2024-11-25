@@ -549,7 +549,7 @@ export function apply(ctx: Context, config: Config) {
         if (item.userId === session.userId) {
           myContent.push(item)
         }
-        if (item.review.some((i) => i.userId)) {
+        if (item.review.some((i) => i.userId === session.userId)) {
           reviewContent.push(item)
         }
         typeList.push(driftbottle.driftbottleType(item))
