@@ -526,7 +526,60 @@ export function apply(ctx: Context, config: Config) {
       } else {
         return `你捞到了id:${temp.id} 的语音瓶，${temp.content.title ? `标题为：${temp.content.title}。\n` : ''}内容如下：` + h.audio(temp.content.audio[0])
       }
+    },
+    /** 漂流瓶统计 */
+    driftbottleTatistics(session) {
+      const allContent: DiftInfo[] = [].concat(...Object.values(this.userTempList))
 
+
+      const hiddenContent: DiftInfo[] = [] // 封禁的瓶子
+      const lostContent: DiftInfo[] = [] // 没捞过的瓶子
+      const myContent: DiftInfo[] = [] // 我发布的瓶子
+      const reviewContent: DiftInfo[] = [] // 我评论过的瓶子
+      const typeList: string[] = []
+
+      // 统计队列
+      let reviewTotal = allContent.map((item) => {
+        if (!item.show) {
+          hiddenContent.push(item)
+        }
+        if (item.getCount === 0) {
+          lostContent.push(item)
+        }
+        if (item.userId === session.userId) {
+          myContent.push(item)
+        }
+        if (item.review.some((i) => i.userId)) {
+          reviewContent.push(item)
+        }
+        typeList.push(driftbottle.driftbottleType(item))
+        return item.review.length
+      }).reduce((a, b) => a + b, 0)
+
+      const typeKey = {}
+      typeList.forEach((item) => {
+        if (!typeKey[item]) {
+          typeKey[item] = 0
+        }
+        typeKey[item]++
+      })
+
+      const msg =
+        h.image('https://smmcat.cn/run/plp.jpg') + `截至到现在的数据如下:` +
+        `\n\n【海的数据】\n` +
+        `茫茫大海中已经存在有${allContent.length}个漂流瓶...` +
+        (hiddenContent.length ? `\n不过有${hiddenContent.length}个瓶子已经被沉入海底，不能获取。` : '')
+        + (lostContent.length ? `\n有${lostContent.length}从未被捞到过...` : '') +
+        `\n\n【瓶子数据】\n` +
+        Object.keys(typeKey).map((item) => {
+          return `${item}存在${typeKey[item]}个;`
+        }).join('\n') +
+        (reviewTotal ? `\n有${reviewTotal}条评论数据;` : '\n还没有任何评论内容;')
+        + `\n\n【我的数据】\n` +
+        (myContent.length ? `至此，你已经丢过${myContent.length}个漂流瓶。\n` : '至此，你还没扔过任何一个漂流瓶。\n') +
+        (reviewContent.length ? `你一共评论过${reviewContent.length}个漂流瓶\n` : '你却也还没评论过任何一个漂流瓶。')
+
+      return msg
     },
     /** 瓶子类型判断 */
     driftbottleType(temp: DiftInfo) {
@@ -788,5 +841,11 @@ export function apply(ctx: Context, config: Config) {
       }
       pid = Math.abs(Math.floor(pid))
       return await driftbottle.openCententById(session, pid)
+    })
+
+  ctx
+    .command('漂流瓶/漂流瓶统计')
+    .action(async ({ session }) => {
+      return driftbottle.driftbottleTatistics(session)
     })
 }
