@@ -805,7 +805,7 @@ export function apply(ctx: Context, config: Config) {
           if (imgList?.length) {
             res += imgList
           } else {
-            if (imgTemp?.trim() !== "否") {
+            if (imgTemp !== undefined && imgTemp.trim() !== "否") {
               await session.send('(；′⌒`) 啊...没检测到图片，图片上传失败')
             }
           }
