@@ -33,19 +33,28 @@ type DiftInfo = {
     review: DiftContent[]
 }
 
+/** 日志图形化数据 */
+type logsHTMLData = {
+    myUserPic: string
+    userPic: string
+    time: number
+    info: string
+    isNew: boolean
+}
+
 
 export const createHTML = {
-    driftContent(temp: DiftInfo, type = 0,botid:string) {
+    driftContent(temp: DiftInfo, type = 0, botid: string) {
         switch (type) {
             case 0:
-                return this.typeOne(temp,botid)
+                return this.typeOne(temp, botid)
             case 1:
-                return this.typeTwo(temp,botid)
+                return this.typeTwo(temp, botid)
             default:
-                return this.typeOne(temp,botid)
+                return this.typeOne(temp, botid)
         }
     },
-    typeOne(temp: DiftInfo,botid:string) {
+    typeOne(temp: DiftInfo, botid: string) {
         return `
        <!DOCTYPE html>
 <html lang="zh">
@@ -213,7 +222,7 @@ export const createHTML = {
 </html>   
        `
     },
-    typeTwo(temp: DiftInfo,botid:string) {
+    typeTwo(temp: DiftInfo, botid: string) {
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -399,6 +408,167 @@ body {
 </body>
 </html>
 `
+    },
+    logsContent(temp: logsHTMLData[]) {
+        return `
+      <!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日志列表</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+        }
+
+        body,
+        html {
+            font-family: Arial, sans-serif;
+            width: 800px;
+            min-height: 600px;
+            background-color: transparent;
+        }
+
+        .container {
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            min-height: 600px;
+            background-color: #fff8e1;
+            position: relative;
+        }
+
+        .timeline {
+            flex: 1;
+            position: relative;
+            transform: translate(10px, 0);
+            width: 98%;
+            border-left: 2px dashed #443c3c;
+            padding-left: 20px;
+        }
+
+        .timeline-item {
+            max-width: 90%;
+            margin: 10px 0;
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .timeline-item:before {
+            content: '';
+            position: absolute;
+            left: -16px;
+            top: 10px;
+            width: 0;
+            height: 0;
+            border: 10px solid transparent;
+            border-left-color: #331e04;
+        }
+
+        .content {
+            width: 100%;
+            margin-left: 0px;
+            border: 1px solid #ccc;
+            background-image: linear-gradient(#ffffff 80%, #fdfef4);
+            border-radius: 5px;
+            padding: 10px 15px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            position: relative;
+            /* max-width: 500px; */
+        }
+
+        img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            margin: 0 10px;
+            margin-bottom: 3px;
+            vertical-align: middle;
+        }
+
+        .bubble {
+            display: flex;
+            align-items: center;
+        }
+
+        span {
+            font-weight: bold;
+            color: red;
+            margin: 0 5px;
+            font-size: 20px;
+        }
+
+        .event {
+            width: 700px;
+            color: #331e04;
+            padding-bottom: 2px;
+            border-bottom: 2px dashed #ccc;
+        }
+
+        .time {
+            margin-top: 5px;
+            color: #888;
+            font-size: 0.9em;
+        }
+
+        .title {
+            display: flex;
+            font-weight: bold;
+            justify-content: center;
+            align-items: center;
+            color: #331e04;
+            font-size: 20px;
+            border-bottom: 2px solid #211a12;
+            height: 50px;
+            margin-bottom: 4px;
+        }
+       .new::before{
+            position: absolute;
+            top: -15px;
+            right: 10px;
+            content: '新！';
+            color: rgb(0, 182, 42);
+            font-weight: bold;
+            font-size: 28px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="title">日志列表</div>
+        <div class="timeline">
+            
+                ${temp.length ? temp.map((item) => {
+            return `
+            <div class="timeline-item">
+                <div class="content bubble">
+                    <div>
+                        <div class="event ${item.isNew ? 'new' : ''}">
+                            ${item.info}
+                        </div>
+                        <div class="time">${uilts.formatTimestamp(item.time)}</div>
+                    </div>
+                </div>
+            </div>    
+                 `
+        }).join('') : `
+        <div class="timeline-item">
+                <div class="content bubble" style="display: flex;align-items: center;justify-content: center;">
+                    暂无数据
+                </div>
+        </div>
+        `}
+            
+        </div>
+    </div>
+</body>
+</html>
+      `
     }
 }
 

@@ -17,9 +17,11 @@ export interface Config {
   dataPath: string
   deBug: boolean
   historyPath: string
+  logsPath: string
   throwWaitTime: number
   scoopWaitTime: number
   leaveMsgWaitTime: number
+  logsNum: number
   isExamine: boolean
   Appid: string
   key: string
@@ -45,6 +47,8 @@ export const Config: Schema<Config> = Schema.object({
   basePath: Schema.string().default('./data/smm-driftbottle').description('多媒体文件存放位置'),
   dataPath: Schema.string().default('smm-driftbottle').description('用户数据命名空间 (在 /data/localstorage 文件夹下)'),
   historyPath: Schema.string().default('smm-driftbottle-history').description('用户获得瓶子的数据命名空间 (在 /data/localstorage 文件夹下)'),
+  logsPath: Schema.string().default('smmcat-driftbottle-logs').description('用户日志的数据命名空间 (在 /data/localstorage 文件夹下)'),
+  logsNum: Schema.number().default(20).description('日志最大显示数量'),
   throwWaitTime: Schema.number().default(20000).description('扔漂流瓶的等待时间'),
   scoopWaitTime: Schema.number().default(20000).description('捞漂流瓶的等待时间'),
   leaveMsgWaitTime: Schema.number().default(20000).description('留言的等待时间'),
@@ -199,6 +203,167 @@ export function apply(ctx: Context, config: Config) {
     }
   }
 
+  enum logType {
+    /** 用户发布瓶子 */
+    FABU = 0,
+    /** 用户捞瓶子 */
+    HUOQU = 1,
+    /** 用户主动留言 */
+    LIUYAN = 2,
+    /** 用户被留言 */
+    BEILIUYAN = 3,
+    /** 用户瓶子被获得 */
+    BEIHUOQU = 4,
+    /** 瓶子被管理员封禁 */
+    SHANCHU = 5,
+    /** 瓶子被管理员解封 */
+    JIEFENG = 6
+  }
+
+  /** 日志项信息 */
+  type logItem = {
+    /** 事件类型 */
+    type: logType,
+    /** 目标用户 id */
+    userId: string,
+    /** 瓶子 id */
+    bottleId: number,
+    /** 瓶子类型 */
+    bottleType?: string,
+    /** 事件时间 */
+    time?: number,
+    /** 是否被用户查看 */
+    isNew?: boolean
+  }
+
+  /** 日志图形化数据 */
+  type logsHTMLData = {
+    myUserPic: string
+    userPic: string
+    time: number
+    info: string
+    isNew: boolean
+  }
+
+  /** 日志记录业务 */
+  const logs = {
+    basePath: '',
+    userIdList: {},
+    async init() {
+      this.basePath = path.join(ctx.localstorage.basePath, config.logsPath)
+      if (!fs.existsSync(this.basePath)) {
+        fs.mkdirSync(this.basePath, { recursive: true });
+      }
+      const dict = { ok: 0, err: 0 }
+      const temp: { [key: string]: logItem[] } = {}
+      const eventList = fs.readdirSync(this.basePath).map((item) => {
+        return new Promise(async (resolve, rejects) => {
+          try {
+            temp[item] = JSON.parse(await ctx.localstorage.getItem(`${config.logsPath}/${item}`))
+            dict.ok++
+            resolve(true)
+          } catch (error) {
+            console.log(error);
+            dict.err++
+            resolve(true)
+          }
+        })
+      })
+      await Promise.all(eventList)
+      this.userIdList = temp
+      config.deBug && console.log(`用户日志加载完成，一共加载成功${dict.ok}个用户数据，失败:${dict.err}个`);
+    },
+    /** 添加事件
+     * @param userId 存储事件的目标
+     * @param info 事件信息
+     */
+    addLogForEvent(userId: string, info: logItem) {
+      const temp = {
+        type: info.type,
+        userId: info.userId,
+        bottleId: info.bottleId,
+        time: +new Date(),
+        bottleType: info.bottleType || '漂流瓶',
+        isNew: true
+      }
+      this.initUserLogsData(userId)
+      this.userIdList[userId].unshift(temp)
+      this.updateLogsStore(userId)
+    },
+    /** 获取用户日志信息 */
+    async getUserLogsList(userId: string) {
+      try {
+        this.initUserLogsData(userId)
+        // 获取格式化后数据
+        const temp: logsHTMLData[] = this.userIdList[userId].slice(0, config.logsNum)
+          .filter((item: logItem) => item).map((item: logItem) => logs.formatTypeEvent(userId, item))
+        const html = createHTML.logsContent(temp)
+        // 是否存新日志
+        let updata = temp.some((item) => item.isNew) 
+        // 更新本地数据
+        if (updata) {
+          this.userIdList[userId].forEach((item: logItem) => {
+            item.isNew = false
+          })
+          console.log(this.userIdList[userId]);
+          this.updateLogsStore(userId)
+        }
+        return await ctx.puppeteer.render(html)
+      } catch (error) {
+        console.log(error);
+        return '错误，图形化界面失败...'
+      }
+    },
+    /** 格式化日志事件信息 */
+    formatTypeEvent(userId: string, logItem: logItem) {
+      const temp: logsHTMLData = {
+        myUserPic: `http://q.qlogo.cn/qqapp/${config.botId}/${userId}/640`,
+        userPic: `http://q.qlogo.cn/qqapp/${config.botId}/${logItem.userId}/640`,
+        time: logItem.time,
+        isNew: logItem.isNew,
+        info: ''
+      }
+      switch (logItem.type) {
+        case logType.FABU:
+          temp.info = `<img src="${temp.userPic}" />你向海中扔出了一个ID为<span>${logItem.bottleId}</span>的<span>${logItem.bottleType}</span>`
+          break;
+        case logType.HUOQU:
+          temp.info = `<img src="${temp.userPic}" />你在海中捞到了ID为<span>${logItem.bottleId}</span>的<span>${logItem.bottleType}</span>`
+          break;
+        case logType.LIUYAN:
+          temp.info = `<img src="${temp.userPic}" />你向ID为<span>${logItem.bottleId}</span>的<span>${logItem.bottleType}</span>写了留言`
+          break;
+        case logType.BEILIUYAN:
+          temp.info = `<img src="${temp.userPic}" />向你<img src="${temp.myUserPic}" />ID为<span>${logItem.bottleId}</span>的<span>${logItem.bottleType}</span>瓶子写了留言`
+          break;
+        case logType.BEIHUOQU:
+          temp.info = `<img src="${temp.myUserPic}" />你的ID为<span>${logItem.bottleId}</span>的<span>${logItem.bottleType}</span>被<img src="${temp.userPic}" />首次捞到`
+          break;
+        case logType.SHANCHU:
+          temp.info = `<img src="${temp.myUserPic}" />你ID为<span>${logItem.bottleId}</span>的<span>${logItem.bottleType}</span>的瓶子被管理员<img src="${temp.userPic}" />封禁`
+          break;
+        case logType.JIEFENG:
+          temp.info = `<img src="${temp.myUserPic}" />你ID为<span>${logItem.bottleId}</span>的<span>${logItem.bottleType}</span>的瓶子被管理员<img src="${temp.userPic}" />解封`
+          break;
+        default:
+          temp.info = `<img src="${temp.userPic}" />发生了一些不为人知的事情，无从考究`
+          break;
+      }
+      return temp
+    },
+    /** 初始化用户数据 */
+    initUserLogsData(userId: string) {
+      if (!this.userIdList[userId]) {
+        this.userIdList[userId] = []
+      }
+    },
+    /** 更新本地数据 */
+    async updateLogsStore(userId: string) {
+      const temp: logItem = this.userIdList[userId]
+      await ctx.localstorage.setItem(`${config.logsPath}/${userId}`, JSON.stringify(temp))
+    }
+  }
+
   /** 漂流瓶操作 */
   const driftbottle = {
     /** 基地址 */
@@ -255,22 +420,21 @@ export function apply(ctx: Context, config: Config) {
       config.deBug && console.log(`漂流瓶数据加载完成，一共加载成功${dict.data.ok}个用户数据，失败:${dict.data.err}个`);
       await Promise.all(historyEventList)
       config.deBug && console.log(`历史数据加载完成，一共加载成功${dict.history.ok}个用户数据，失败:${dict.history.err}个`);
-      config.deBug && console.log(JSON.stringify(temp, null, ' '));
+      // config.deBug && console.log(JSON.stringify(temp, null, ' '));
 
       // 找到最后一个 id
       this.nextId = [].concat(...Object.values(temp)).map((item) => item.id).sort((a, b) => b - a)[0] || 0
       this.userTempList = temp
       this.historyTempList = historyTemp
-      console.log(this.historyTempList);
-
+      // console.log(this.historyTempList);
     },
     /** 评论指定 id 的瓶子内容 */
     async setReviewForCententById(session: Session, id: number, msg: string) {
 
       if (!this.historyTempList[session.userId]) {
         this.historyTempList[session.userId] = []
-        this.updateStoreHistory(session.userId)
       }
+
       if (!this.historyTempList[session.userId].includes(id) && !config.adminQQ.includes(session.userId)) {
         return `您并未捞到过 id 为：${id} 的瓶子，需要捞到过才可以指定选择读取瓶子内容`
       }
@@ -332,6 +496,25 @@ export function apply(ctx: Context, config: Config) {
         image: storeImageUrl.length ? storeImageUrl : null
       }
       selectContent.review.push(temp)
+      // 为自己添加留言日志
+      logs.addLogForEvent(session.userId, {
+        type: logType.LIUYAN,
+        userId: session.userId,
+        bottleId: selectContent.id,
+        bottleType: this.driftbottleType(selectContent)
+      })
+
+      // 排除自己情况
+      if (session.userId !== selectContent.userId) {
+        // 为对方添加被留言日志
+        logs.addLogForEvent(selectContent.userId, {
+          type: logType.BEILIUYAN,
+          userId: session.userId,
+          bottleId: selectContent.id,
+          bottleType: this.driftbottleType(selectContent)
+        })
+      }
+
       await session.send(`评论id:${id} 的` + this.driftbottleType(selectContent) + '成功！')
     },
     /** 封禁漂流瓶 */
@@ -351,6 +534,14 @@ export function apply(ctx: Context, config: Config) {
 
       selectContent.show = false
       this.updateStoreUser(selectContent.userId)
+
+      // 为目标添加封禁日志
+      logs.addLogForEvent(selectContent.userId, {
+        type: logType.SHANCHU,
+        userId: session.userId,
+        bottleId: selectContent.id,
+        bottleType: this.driftbottleType(selectContent)
+      })
       await session.send(`处理成功，已关闭显示 id:${id} 的` + this.driftbottleType(selectContent))
     },
     /** 解封漂流瓶 */
@@ -370,6 +561,14 @@ export function apply(ctx: Context, config: Config) {
 
       selectContent.show = true
       this.updateStoreUser(selectContent.userId)
+
+      // 为目标添加解封日志
+      logs.addLogForEvent(selectContent.userId, {
+        type: logType.JIEFENG,
+        userId: session.userId,
+        bottleId: selectContent.id,
+        bottleType: this.driftbottleType(selectContent)
+      })
       await session.send(`处理成功，已开放显示 id:${id} 的` + this.driftbottleType(selectContent))
     },
     /** 将返回的消息记录成瓶子收录格式 */
@@ -466,6 +665,14 @@ export function apply(ctx: Context, config: Config) {
       this.updateStoreUser(userId)
       this.historyGetContentId(userId, id)
       config.deBug && console.log(JSON.stringify(temp, null, ' '));
+
+      // 为自己添加发布日志
+      logs.addLogForEvent(session.userId, {
+        type: logType.FABU,
+        userId: session.userId,
+        bottleId: temp.id,
+        bottleType: this.driftbottleType(temp)
+      })
       return { code: true, msg: `你成功扔出了一个${this.driftbottleType(temp)}\n瓶子ID为：${id}` }
     },
     /** 获得随机瓶子 */
@@ -478,6 +685,31 @@ export function apply(ctx: Context, config: Config) {
       console.log(randomContent);
       await session.send(`你捞到一个` + this.driftbottleType(randomContent) + '\n稍等，正在为你展开内容...')
       randomContent.getCount++
+
+      // 为自己记录获得日志
+      logs.addLogForEvent(session.userId, {
+        type: logType.HUOQU,
+        userId: session.userId,
+        bottleId: randomContent.id,
+        bottleType: this.driftbottleType(randomContent)
+      })
+
+      // 排除自己情况
+      if (session.userId !== randomContent.userId) {
+        if (!this.historyTempList[session.userId]) {
+          this.historyTempList[session.userId] = []
+        }
+        // 为对方记录被首次获得的日志
+        if (!this.historyTempList[session.userId].includes(id)) {
+          logs.addLogForEvent(randomContent.userId, {
+            type: logType.BEIHUOQU,
+            userId: session.userId,
+            bottleId: randomContent.id,
+            bottleType: this.driftbottleType(randomContent)
+          })
+        }
+      }
+
       // 记录获得的瓶子
       this.historyGetContentId(session.userId, randomContent.id)
       this.updateStoreUser(randomContent.userId)
@@ -714,7 +946,7 @@ export function apply(ctx: Context, config: Config) {
     }
   }
 
-  // md5 优化
+  // md5 优化 
   const tool = {
     md5temp: {},
     md5Len: [],
@@ -755,6 +987,7 @@ export function apply(ctx: Context, config: Config) {
 
   ctx.on('ready', () => {
     driftbottle.init()
+    logs.init()
   })
 
   ctx
@@ -847,5 +1080,20 @@ export function apply(ctx: Context, config: Config) {
     .command('漂流瓶/漂流瓶统计')
     .action(async ({ session }) => {
       return driftbottle.driftbottleTatistics(session)
+    })
+
+  const waitLog = {}
+
+  ctx
+    .command('漂流瓶/漂流瓶日志')
+    .action(async ({ session }) => {
+      if (waitLog[session.userId]) {
+        session.send('请等待请求完成')
+        return
+      }
+      waitLog[session.userId] = true
+      await session.send('稍等，正在获取日志信息...')
+      await session.send(await logs.getUserLogsList(session.userId))
+      waitLog[session.userId] = false
     })
 }
