@@ -26,11 +26,14 @@ export interface Config {
   Appid: string
   key: string
   styleType: any
+  delOrBlur: any
   filter: Array<string>
   textfilter: Array<string>
+  onbotAvatar: boolean
 }
 
 export const inject = ['localstorage', 'puppeteer']
+
 export const usage = `
 漂流瓶业务，需要安装 [localstorage](/market?keyword=smmcat-localstorage) 服务，作为数据的存储策略
 
@@ -40,6 +43,7 @@ export const usage = `
 export const Config: Schema<Config> = Schema.object({
   botId: Schema.string().description('qqbot的id (由于不会写自动获取需要手动，后续版本自动)'),
   adminQQ: Schema.array(String).role('table').description('管理员QQ 可查指定id内容，删除瓶子'),
+  onbotAvatar: Schema.boolean().default(false).description('头像+网名获取兼容第三方QQ机器人适配'),
   styleType: Schema.union([
     Schema.const(0).description('记事本'),
     Schema.const(1).description('蓝色简约'),
@@ -56,6 +60,10 @@ export const Config: Schema<Config> = Schema.object({
   isExamine: Schema.boolean().default(false).description('是否开启不良内容审核'),
   Appid: Schema.string().description('不良内容审核的 appid'),
   key: Schema.string().description('不良内容审核的 密钥'),
+  delOrBlur: Schema.union([
+    Schema.const(0).description('拒收'),
+    Schema.const(1).description('高斯模糊'),
+  ]).description('不良图片处理逻辑'),
   filter: Schema.array(String).role('table').default([
     "ACGPorn",
     'ButtocksExposed',
@@ -88,7 +96,9 @@ export function apply(ctx: Context, config: Config) {
     /** 图片 */
     image: string[] | null,
     /** 发送者 */
-    userId?: string
+    userId?: string,
+    /** 发送者名字 */
+    username?: string
   }
 
   /** 漂流瓶信息 */
@@ -110,6 +120,7 @@ export function apply(ctx: Context, config: Config) {
     show: boolean,
     /** 发送者 */
     userId: string,
+    username?: string,
     /** 评论 */
     review: DiftContent[]
   }
@@ -299,7 +310,7 @@ export function apply(ctx: Context, config: Config) {
           .filter((item: logItem) => item).map((item: logItem) => logs.formatTypeEvent(userId, item))
         const html = createHTML.logsContent(temp)
         // 是否存新日志
-        let updata = temp.some((item) => item.isNew) 
+        let updata = temp.some((item) => item.isNew)
         // 更新本地数据
         if (updata) {
           this.userIdList[userId].forEach((item: logItem) => {
@@ -308,7 +319,7 @@ export function apply(ctx: Context, config: Config) {
           console.log(this.userIdList[userId]);
           this.updateLogsStore(userId)
         }
-        return await ctx.puppeteer.render(html)
+        return await ctx.puppeteer && ctx.puppeteer.render(html)
       } catch (error) {
         console.log(error);
         return '错误，图形化界面失败...'
@@ -317,8 +328,8 @@ export function apply(ctx: Context, config: Config) {
     /** 格式化日志事件信息 */
     formatTypeEvent(userId: string, logItem: logItem) {
       const temp: logsHTMLData = {
-        myUserPic: `http://q.qlogo.cn/qqapp/${config.botId}/${userId}/640`,
-        userPic: `http://q.qlogo.cn/qqapp/${config.botId}/${logItem.userId}/640`,
+        myUserPic: config.onbotAvatar ? `https://q1.qlogo.cn/g?b=qq&nk=${userId}&s=0` : `http://q.qlogo.cn/qqapp/${config.botId}/${userId}/640`,
+        userPic: config.onbotAvatar ? `https://q1.qlogo.cn/g?b=qq&nk=${logItem.userId}&s=0` : `http://q.qlogo.cn/qqapp/${config.botId}/${logItem.userId}/640`,
         time: logItem.time,
         isNew: logItem.isNew,
         info: ''
@@ -744,23 +755,46 @@ export function apply(ctx: Context, config: Config) {
       if (!selectContent.show) {
         return `id为 ${id} 的瓶子已被管理员清理...`
       }
-      console.log(selectContent);
+
+      // 动态获取QQ网名
+      if (config.onbotAvatar) {
+        const username = await driftbottle.getQQDetailByQQ(selectContent.userId)
+        selectContent.username = tools.sanitizeText(username || '')
+        const eventList = selectContent.review.map((item, index) => {
+          return new Promise(async (resolve, reject) => {
+            try {
+              selectContent.review[index].username = tools.sanitizeText(await driftbottle.getQQDetailByQQ(item.userId) || '')
+              resolve(true)
+            } catch (error) {
+              resolve(true)
+            }
+          })
+        })
+        await Promise.all(eventList)
+      }
+      config.deBug && console.log(selectContent);
       await session.send(`指定获取id为${id}的` + this.driftbottleType(selectContent) + '\n稍等，正在为你展开内容...')
       selectContent.getCount++
       this.updateStoreUser(selectContent.userId)
       return await this.formatDriftContent(selectContent)
     },
+    /** onebot 通过QQ号获取用户信息 */
+    async getQQDetailByQQ(qq: string) {
+      const res = await ctx.http.post('https://tools.mgtv100.com/external/v1/pear/qq', { qq })
+      if (res.code !== 200) return ''
+      return res.data.nickname
+    },
     /** 格式化瓶子内容 */
     async formatDriftContent(temp: DiftInfo) {
       if (!temp.content.audio?.length) {
-        const htmlstr = createHTML.driftContent(temp, config.styleType, config.botId)
+        const htmlstr = createHTML.driftContent(temp, config.styleType, config.botId, config.onbotAvatar)
         return await ctx.puppeteer.render(htmlstr) + `你可以发送 /留言 ${temp.id} 你的内容 \n来在这个瓶子中发表自己的意见`
       } else {
         return `你捞到了id:${temp.id} 的语音瓶，${temp.content.title ? `标题为：${temp.content.title}。\n` : ''}内容如下：` + h.audio(temp.content.audio[0])
       }
     },
     /** 漂流瓶统计 */
-    driftbottleTatistics(session) {
+    driftbottleTatistics(session: Session) {
       const allContent: DiftInfo[] = [].concat(...Object.values(this.userTempList))
 
 
@@ -893,7 +927,21 @@ export function apply(ctx: Context, config: Config) {
                 });
                 if (!flag) {
                   dict.err++;
-                  imgList[index] = null;
+                  // 处理不良策略 拒收
+                  if (config.delOrBlur == 0) {
+                    imgList[index] = null;
+                  }
+                  // 处理不良策略 高斯模糊
+                  else if (config.delOrBlur == 1) {
+                    try {
+                      const blurResult = await ctx.http.get(`https://api.52vmy.cn/api/img/gaussian?url=${imgList[index]}`)
+                      imgList[index] = blurResult.url
+                    } catch (error) {
+                      console.log("高斯模糊接口可能失效。转为拒收逻辑");
+                      imgList[index] = null;
+                    }
+                  }
+
                 }
               } else {
                 console.log("不良图像审核处理失败，检测 key 是否失效或者有效。或 key 的次数用完");
@@ -908,7 +956,7 @@ export function apply(ctx: Context, config: Config) {
         });
         await Promise.all(eventList);
         if (dict.err) {
-          await session.send(`存在${dict.err}张不良图片，提交前已过滤`);
+          await session.send(`存在${dict.err}张不良图片，提交前已${config.delOrBlur ? "模糊" : "过滤"}`);
         }
         return imgList.filter((item) => item !== null);
       } else {
@@ -1021,13 +1069,17 @@ export function apply(ctx: Context, config: Config) {
     })
 
   ctx
-    .command('漂流瓶/扔漂流瓶')
-    .action(async ({ session }) => {
+    .command('漂流瓶/扔漂流瓶 <msgContent:text>')
+    .action(async ({ session }, msgContent) => {
       if (!cooling.check(session.userId, UseType.RenPingZi)) {
         return `你扔瓶子的频率太快，请等20秒`
       }
-      await session.send('(*/ω＼*) 您正在尝试丢出一个瓶子，请在20秒内发送你瓶子里的内容。')
-      let res = await session.prompt(20000)
+      let res = msgContent || ''
+
+      if (!res.trim()) {
+        await session.send('(*/ω＼*) 您正在尝试丢出一个瓶子，请在20秒内发送你瓶子里的内容。')
+        res = await session.prompt(20000)
+      }
       if (res && res.trim()) {
         // 判断是否需要添加图片内容
         if (h.select(res, 'aduio').length == 0 && h.select(res, 'img').length == 0) {

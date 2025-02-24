@@ -8,6 +8,8 @@ type DiftContent = {
     creatTime: number,
     /** 发送者 */
     userId?: string
+    /** 发送者网名 */
+    username?: string
 }
 
 /** 漂流瓶信息 */
@@ -29,6 +31,8 @@ type DiftInfo = {
     show: boolean,
     /** 发送者 */
     userId: string,
+    /** 发送者网名 */
+    username?: string,
     /** 评论 */
     review: DiftContent[]
 }
@@ -44,17 +48,17 @@ type logsHTMLData = {
 
 
 export const createHTML = {
-    driftContent(temp: DiftInfo, type = 0, botid: string) {
+    driftContent(temp: DiftInfo, type = 0, botid: string, isOnebot = false) {
         switch (type) {
             case 0:
-                return this.typeOne(temp, botid)
+                return this.typeOne(temp, botid, isOnebot)
             case 1:
-                return this.typeTwo(temp, botid)
+                return this.typeTwo(temp, botid, isOnebot)
             default:
-                return this.typeOne(temp, botid)
+                return this.typeOne(temp, botid, isOnebot)
         }
     },
-    typeOne(temp: DiftInfo, botid: string) {
+    typeOne(temp: DiftInfo, botid: string, isOnebot: Boolean) {
         return `
        <!DOCTYPE html>
 <html lang="zh">
@@ -202,8 +206,8 @@ export const createHTML = {
       <p>${temp.content.text ? temp.content.text : '无内容'}</p>
       <div class="count">被捞起的次数：${temp.getCount}</div>
         <div class="author">
-         <img src="http://q.qlogo.cn/qqapp/${botid}/${temp.userId}/640" alt="作者头像">
-         <span>作者</span>
+         <img src="${isOnebot ? `https://q1.qlogo.cn/g?b=qq&nk=${temp.userId}&s=0` : `http://q.qlogo.cn/qqapp/${botid}/${temp.userId}/640`}" alt="作者头像">
+         <span>作者 ${temp.username ? temp.username : ''}</span>
          <span style="margin-left:10px;">创建时间：${temp.content.creatTime ? uilts.formatTimestamp(temp.content.creatTime) : '未知'}</span>
     </div>
   </div>
@@ -211,8 +215,8 @@ export const createHTML = {
     <h3>评论区</h3>
     ${temp.review.map((item) => {
             return `<div class="comment">
-        <img src="http://q.qlogo.cn/qqapp/${botid}/${item.userId}/640" alt="用户A头像">
-        <span>${item.text ? item.text : ''} ${item.image ? item.image.map((item) => `<img src="${item}" />`).join('') : ''}</span>
+        <img src="${isOnebot ? `https://q1.qlogo.cn/g?b=qq&nk=${item.userId}&s=0` : `http://q.qlogo.cn/qqapp/${botid}/${item.userId}/640`}" alt="用户A头像">
+        <span>${item.username ? `${item.username}：` : ''}${item.text ? item.text : ''} ${item.image ? item.image.map((item) => `<img src="${item}" />`).join('') : ''}</span>
         <span class="comment-time">${item.creatTime ? uilts.formatTimestamp(item.creatTime) : '未知'}</span>
     </div>`
         }).join('')}
@@ -222,7 +226,7 @@ export const createHTML = {
 </html>   
        `
     },
-    typeTwo(temp: DiftInfo, botid: string) {
+    typeTwo(temp: DiftInfo, botid: string, isOnebot: boolean) {
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -366,7 +370,7 @@ body {
             <div class="bottle-info">
                 <div class="pickup-count">被捞起次数：${temp.getCount}</div>
                 <div class="author-info">
-                    <div class="avatar"><img src="http://q.qlogo.cn/qqapp/${botid}/${temp.userId}/640" alt="用户头像"></div>
+                    <div class="avatar"><img src="${isOnebot ? `https://q1.qlogo.cn/g?b=qq&nk=${temp.userId}&s=0` : `http://q.qlogo.cn/qqapp/${botid}/${temp.userId}/640`}" alt="用户头像"></div>
                     <div class="author-content">
                         <div class="nickname">${temp.userId.slice(0, 5) + '...'}</div>
                         <div class="time">扔瓶时间: ${temp.content.creatTime ? uilts.formatTimestamp(temp.content.creatTime) : '未知'}</div>
@@ -385,7 +389,7 @@ body {
                 ${temp.review.map((item) => {
             return `<div class="message">
                     <div class="message-info">
-                        <div class="avatar"><img src="http://q.qlogo.cn/qqapp/${botid}/${item.userId}/640" alt="留言人头像"></div>
+                        <div class="avatar"><img src="${isOnebot ? `https://q1.qlogo.cn/g?b=qq&nk=${item.userId}&s=0` : `http://q.qlogo.cn/qqapp/${botid}/${item.userId}/640`}" alt="留言人头像"></div>
                         <div class="message-content">
                             <div class="nickname">${item.userId.slice(0, 5) + '...'}</div>
                             <div class="time">留言时间: ${item.creatTime ? uilts.formatTimestamp(item.creatTime) : '未知'}</div>
