@@ -372,7 +372,7 @@ body {
                 <div class="author-info">
                     <div class="avatar"><img src="${isOnebot ? `https://q1.qlogo.cn/g?b=qq&nk=${temp.userId}&s=0` : `http://q.qlogo.cn/qqapp/${botid}/${temp.userId}/640`}" alt="用户头像"></div>
                     <div class="author-content">
-                        <div class="nickname">${temp.userId.slice(0, 5) + '...'}</div>
+                        <div class="nickname">${temp.username ? temp.username : temp.userId.slice(0, 5) + '...'}</div>
                         <div class="time">扔瓶时间: ${temp.content.creatTime ? uilts.formatTimestamp(temp.content.creatTime) : '未知'}</div>
                     </div>
                 </div>
@@ -391,7 +391,7 @@ body {
                     <div class="message-info">
                         <div class="avatar"><img src="${isOnebot ? `https://q1.qlogo.cn/g?b=qq&nk=${item.userId}&s=0` : `http://q.qlogo.cn/qqapp/${botid}/${item.userId}/640`}" alt="留言人头像"></div>
                         <div class="message-content">
-                            <div class="nickname">${item.userId.slice(0, 5) + '...'}</div>
+                            <div class="nickname">${item.username ? item.username : item.userId.slice(0, 5) + '...'}</div>
                             <div class="time">留言时间: ${item.creatTime ? uilts.formatTimestamp(item.creatTime) : '未知'}</div>
                         </div>
                     </div>

@@ -299,6 +299,12 @@ export function apply(ctx: Context, config: Config) {
       }
       this.initUserLogsData(userId)
       this.userIdList[userId].unshift(temp)
+
+      // 本地记录日志最大数量 默认 30条
+      if (this.userIdList[userId].length > (config.logsNum > 30 ? config.logsNum : 30)) {
+        this.userIdList[userId] = this.userIdList[userId].silce(0, config.logsNum > 30 ? config.logsNum : 30)
+      }
+
       this.updateLogsStore(userId)
     },
     /** 获取用户日志信息 */
@@ -797,7 +803,6 @@ export function apply(ctx: Context, config: Config) {
     driftbottleTatistics(session: Session) {
       const allContent: DiftInfo[] = [].concat(...Object.values(this.userTempList))
 
-
       const hiddenContent: DiftInfo[] = [] // 封禁的瓶子
       const lostContent: DiftInfo[] = [] // 没捞过的瓶子
       const myContent: DiftInfo[] = [] // 我发布的瓶子
@@ -1045,7 +1050,7 @@ export function apply(ctx: Context, config: Config) {
     .command('漂流瓶/捞漂流瓶 <num:number>')
     .action(async ({ session }, num) => {
       if (!cooling.check(session.userId, UseType.LaoPingZi)) {
-        return `你捞瓶子的频率太快，请等20秒`
+        return `你捞瓶子的频率太快，请等${config.scoopWaitTime}秒`
       }
       num = num && Math.abs(Math.floor(num))
       if (num) {
@@ -1059,7 +1064,7 @@ export function apply(ctx: Context, config: Config) {
     .command('漂流瓶/留言 <pid:number> <msg:text>')
     .action(async ({ session }, pid, msg) => {
       if (!cooling.check(session.userId, UseType.LiuYan)) {
-        return `你留言的频率太快，请等20秒`
+        return `你留言的频率太快，请等${config.leaveMsgWaitTime}秒`
       }
       if (pid == undefined) {
         return `发送失败，请先填写需要留言的漂流瓶的对应 id\n例如：留言 1 这是内容`
@@ -1072,7 +1077,7 @@ export function apply(ctx: Context, config: Config) {
     .command('漂流瓶/扔漂流瓶 <msgContent:text>')
     .action(async ({ session }, msgContent) => {
       if (!cooling.check(session.userId, UseType.RenPingZi)) {
-        return `你扔瓶子的频率太快，请等20秒`
+        return `你扔瓶子的频率太快，请等${config.throwWaitTime}秒`
       }
       let res = msgContent || ''
 
