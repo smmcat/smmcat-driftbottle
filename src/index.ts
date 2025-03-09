@@ -302,7 +302,7 @@ export function apply(ctx: Context, config: Config) {
 
       // 本地记录日志最大数量 默认 30条
       if (this.userIdList[userId].length > (config.logsNum > 30 ? config.logsNum : 30)) {
-        this.userIdList[userId] = this.userIdList[userId].silce(0, config.logsNum > 30 ? config.logsNum : 30)
+        this.userIdList[userId] = this.userIdList[userId].slice(0, config.logsNum > 30 ? config.logsNum : 30)
       }
 
       this.updateLogsStore(userId)
