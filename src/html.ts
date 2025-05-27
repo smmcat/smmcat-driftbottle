@@ -1,3 +1,5 @@
+import { HistoryInfoList } from "."
+
 /** 漂流瓶内容 */
 type DiftContent = {
     /** 文本 */
@@ -9,7 +11,9 @@ type DiftContent = {
     /** 发送者 */
     userId?: string
     /** 发送者网名 */
-    username?: string
+    username?: string,
+    /** 是否删除 */
+    isDel?: boolean
 }
 
 /** 漂流瓶信息 */
@@ -165,6 +169,12 @@ export const createHTML = {
         align-items: start;
         background-color: #f0f4c3; /* 评论区背景色 */
     }
+    .comment span.del{
+        font-size: 12px;
+        border:1px dashed #ccc;
+        padding: 5px 10px;
+        color:rgb(113, 113, 113);
+    }
     .comment>img {
         width: 30px;
         height: 30px;
@@ -216,7 +226,7 @@ export const createHTML = {
     ${temp.review.map((item) => {
             return `<div class="comment">
         <img src="${isOnebot ? `https://q1.qlogo.cn/g?b=qq&nk=${item.userId}&s=0` : `http://q.qlogo.cn/qqapp/${botid}/${item.userId}/640`}" alt="用户A头像">
-        <span>${item.username ? `${item.username}：` : ''}${item.text ? item.text : ''} ${item.image ? item.image.map((item) => `<img src="${item}" />`).join('') : ''}</span>
+        ${item.isDel ? '<span class="del">管理员已删除该条评论</span>' : `<span>${item.username ? `${item.username}：` : ''}${item.text ? item.text : ''} ${item.image ? item.image.map((item) => `<img src="${item}" />`).join('') : ''}</span>`}
         <span class="comment-time">${item.creatTime ? uilts.formatTimestamp(item.creatTime) : '未知'}</span>
     </div>`
         }).join('')}
@@ -329,6 +339,12 @@ body {
     color: #444; /* 字体颜色 */
 }
 
+.content.del p{
+   color:rgb(128, 9, 9);
+   border:1px dashed #ccc;
+   padding: 5px 10px;
+}
+
 /* 图片内容样式 */
 .content img {
     max-width: 100%; /* 最大宽度 */
@@ -365,7 +381,7 @@ body {
 </head>
 <body>
     <div class="container">
-        <div class="header">${temp.content.title}</div>
+        <div class="header">${temp.content.title || '无标题'}</div>
         <div class="bottle">
             <div class="bottle-info">
                 <div class="pickup-count">被捞起次数：${temp.getCount}</div>
@@ -395,12 +411,12 @@ body {
                             <div class="time">留言时间: ${item.creatTime ? uilts.formatTimestamp(item.creatTime) : '未知'}</div>
                         </div>
                     </div>
-                    <div class="content">
-                        <p>${item.text ? item.text : '无内容'}</p>
+                    <div class="content ${item.isDel ? 'del' : ''}">
+                        ${item.isDel ? '<p>该内容已被管理员删除</p>' : `<p>${item.text ? item.text : '无内容'}</p>
                         <!-- 图片内容，如果没有图片，可以移除下面的img标签 -->
                         ${item.image ? item.image.map((item) => {
                 return `<img src="${item}" alt="图片内容">`
-            }) : ''}
+            }) : ''}`}
                     </div>
                 </div>`
         })}
@@ -573,6 +589,415 @@ body {
 </body>
 </html>
       `
+    },
+    reovmeCommentMap(temp: DiftInfo, botid: string, isOnebot = false) {
+        return `
+       <!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>评论管理</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        }
+
+        body {
+            max-width: 800px;
+            background-color: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .review-list {
+            margin-top: 20px;
+        }
+
+        .review-item {
+            padding: 15px;
+            border: 1px solid #eee;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: flex-start;
+            transition: all 0.3s ease;
+        }
+
+        .review-item:hover {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: #f0f0f0;
+            margin-right: 15px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .review-content {
+            flex: 1;
+        }
+
+        .review-text {
+            font-size: 16px;
+            margin-bottom: 8px;
+            word-break: break-word;
+        }
+
+        .review-meta {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .review-actions {
+            font-size: 26px;
+            font-weight: 800;
+            color: #ff4d4f;
+            justify-content: center;
+            align-items: center;
+            padding: 13px 20px;
+            background-color: aliceblue;
+            margin-left: 15px;
+        }
+
+        .delete-btn {
+            background-color: #ff4d4f;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+
+        .delete-btn:hover {
+            background-color: #ff7875;
+        }
+
+        .batch-actions {
+            margin-top: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .select-all {
+            display: flex;
+            align-items: center;
+        }
+
+        .select-all input {
+            margin-right: 8px;
+        }
+
+        .batch-delete-btn {
+            background-color: #ff4d4f;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+
+        .batch-delete-btn:hover {
+            background-color: #ff7875;
+        }
+
+        .batch-delete-btn:disabled {
+            background-color: #d9d9d9;
+            cursor: not-allowed;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 0;
+            color: #999;
+        }
+
+        .timestamp {
+            display: inline-block;
+            margin-right: 10px;
+        }
+
+        .user-id {
+            display: inline-block;
+        }
+        .review-text img {
+            margin: 0 5px;
+            vertical-align: text-top;
+            max-width: 70px;
+        }
+        .review-text.del {
+            border: 1px dashed #ccc;
+            padding: 5px 10px;
+        }
+
+        .review-text.del::before {
+            content: '被删除的内容：';
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>关于 ID ${temp.id} 瓶子的评论管理</h1>
+        <div class="review-list" id="review-list">
+            ${temp.review.map((item, index) => {
+            return `
+                <div class="review-item">
+                <div class="avatar">
+                    <img src="${isOnebot ? `https://q1.qlogo.cn/g?b=qq&nk=${item.userId}&s=0` : `http://q.qlogo.cn/qqapp/${botid}/${item.userId}/640`}">
+                </div>
+                <div class="review-content">
+                ${item.isDel ? `<div class="review-text del">${item.text}</div>` : `<div class="review-text">${item.text} ${item.image ? item.image.map((img) => {
+                return `<img src="${img}" />`
+            }) : ''}</div>`}
+                    <div class="review-meta">
+                        <span class="timestamp">${uilts.formatTimestamp(item.creatTime)}</span>
+                        <span class="user-id">用户ID: ${item.userId} ${item.username ? `(${item.username})` : ''}</span>
+                    </div>
+                </div>
+                <div class="review-actions">
+                    ${index + 1}
+                </div>
+            </div>
+                `
+        }).join('')}
+        </div>
+    </div>
+</body>
+</html>
+       `
+    },
+    historyDriftbottleMap(temp: HistoryInfoList[], botid: string, isOnebot = false, allNum = 0) {
+        const dict = { '图片瓶': 'image', '图文瓶': 'image_text', '文本瓶': 'text', '语音瓶': 'audio' }
+        const driftbottleList = []
+        for (let i = 0; i < 50; i++) {
+            if (i == 49) {
+                if (temp.length >= 49) {
+                    driftbottleList.push(`
+                <div class="line">
+                   <div class="more"></div>
+                </div>
+               `)
+                } else {
+                    driftbottleList.push(`
+                <div class="line">
+                </div>
+               `)
+                }
+            } else {
+                driftbottleList.push(`
+                <div class="line">
+                ${temp[i] ? `
+                    <div class="item ${dict[temp[i].type]}">${temp[i].id}<img
+                        src="${isOnebot ? `https://q1.qlogo.cn/g?b=qq&nk=${temp[i].userId}&s=0` : `http://q.qlogo.cn/qqapp/${botid}/${temp[i].userId}/640`}">
+                    </div>
+                    `: ''}
+            </div>
+                `)
+            }
+        }
+        return `
+        <!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+        }
+
+        body,
+        html {
+            max-width: 800px;
+        }
+
+        .content {
+            box-sizing: border-box;
+            width: 800px;
+            min-height: 400px;
+        }
+
+        .content h4 {
+            padding: 10px 0;
+            text-align: center;
+        }
+
+        .bottleList {
+            position: relative;
+            box-sizing: border-box;
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            grid-template-rows: repeat(4, 1fr);
+            width: 100%;
+            min-height: 400px;
+            gap: 5px;
+            padding: 5px;
+            overflow: hidden;
+            border: 6px solid #925f00;
+        }
+
+        .bottleList::before {
+            position: absolute;
+            top: 0;
+            left: 0;
+            display: block;
+            content: '';
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: url('https://smmcat.cn/run/plp.jpg');
+            filter: blur(10px);
+            background-size: cover;
+        }
+
+        .bottleList .line {
+            position: relative;
+            width: 100%;
+            height: 100px;
+            box-sizing: border-box;
+        }
+
+
+        .bottleList .line::before {
+            position: absolute;
+            content: '';
+            display: block;
+            top: 7px;
+            left: 50%;
+            transform: translate(-50%, 0);
+            height: 16px;
+            width: 120%;
+            background-image: url('https://smmcat.cn/run/driftbottle/line.png');
+        }
+
+        .bottleList .item {
+            display: flex;
+            overflow: hidden;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            word-break: break-word;
+            text-align: center;
+            line-height: 20px;
+            font-weight: 800;
+            color: rgba(244, 0, 0, 0.905);
+            text-shadow: 0px 0px 15px gold;
+            font-size: 20px;
+            height: 100px;
+            background-image: url(https://smmcat.cn/run/driftbottle/bottle.png);
+            background-repeat: no-repeat;
+            background-position: center center;
+            background-size: cover;
+        }
+
+        .bottleList .item.image {
+            background-image: url(https://smmcat.cn/run/driftbottle/bottle_image.png);
+        }
+
+        .bottleList .item.image_text {
+            background-image: url(https://smmcat.cn/run/driftbottle/bottle_image_text.png);
+        }
+
+        .bottleList .item.text {
+            background-image: url(https://smmcat.cn/run/driftbottle/bottle_text.png);
+        }
+
+        .bottleList .item.audio {
+            background-image: url(https://smmcat.cn/run/driftbottle/bottle_audio.png);
+        }
+
+        .bottleList .item img {
+            position: absolute;
+            left: 50%;
+            top: 60%;
+            z-index: -1;
+            transform: translate(-50%, -50%);
+            margin-top: 2px;
+            border: 2px solid #925f00;
+            border-radius: 50%;
+            width: 25px;
+            height: 25px;
+        }
+
+        .bottleList .more {
+            position: relative;
+            height: 100px;
+        }
+
+        .bottleList .more::before {
+            position: absolute;
+            content: '...';
+            color: #925f00;
+            font-size: 40px;
+            display: flex;
+            width: 100%;
+            height: 100%;
+            justify-content: center;
+            align-items: center;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="content">
+        <h4>已获得的瓶子记录 (一共有 ${allNum} 个瓶子拾取过)</h4>
+        <div class="bottleList">
+           ${driftbottleList.join('')}
+        </div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const items = document.querySelectorAll('.item');
+
+            items.forEach(item => {
+                // 随机生成 -10° 到 10° 之间的旋转角度
+                const randomRotation = (Math.random() * 20) - 10;
+                item.style.transform = `+ "`rotate(${ randomRotation }deg)`" + `;
+            });
+        });
+    </script>
+</body>
+
+</html>
+        `
     }
 }
 

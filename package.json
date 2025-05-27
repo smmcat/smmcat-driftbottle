@@ -1,13 +1,13 @@
 {
   "name": "koishi-plugin-smmcat-driftbottle",
   "description": "漂流瓶",
-  "version": "0.0.18",
+  "version": "0.0.24",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
     "lib",
     "dist"
-  ],  
+  ],
   "homepage": "https://github.com/smmcat/smmcat-driftbottle/",
   "bugs": {
     "url": "https://github.com/smmcat/smmcat-driftbottle/issues"

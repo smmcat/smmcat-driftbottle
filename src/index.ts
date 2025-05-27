@@ -29,7 +29,8 @@ export interface Config {
   delOrBlur: any
   filter: Array<string>
   textfilter: Array<string>
-  onbotAvatar: boolean
+  onbotAvatar: boolean,
+  allowDelOfAuthor: boolean
 }
 
 export const inject = ['localstorage', 'puppeteer']
@@ -52,6 +53,7 @@ export const Config: Schema<Config> = Schema.object({
   dataPath: Schema.string().default('smm-driftbottle').description('用户数据命名空间 (在 /data/localstorage 文件夹下)'),
   historyPath: Schema.string().default('smm-driftbottle-history').description('用户获得瓶子的数据命名空间 (在 /data/localstorage 文件夹下)'),
   logsPath: Schema.string().default('smmcat-driftbottle-logs').description('用户日志的数据命名空间 (在 /data/localstorage 文件夹下)'),
+  allowDelOfAuthor: Schema.boolean().default(true).description('允许漂流瓶的作者删除瓶子下的评论'),
   logsNum: Schema.number().default(20).description('日志最大显示数量'),
   throwWaitTime: Schema.number().default(20000).description('扔漂流瓶的等待时间'),
   scoopWaitTime: Schema.number().default(20000).description('捞漂流瓶的等待时间'),
@@ -86,6 +88,12 @@ export const Config: Schema<Config> = Schema.object({
   ]).description("文本要检测的词条")
 })
 
+export type HistoryInfoList = {
+  userId: string,
+  id: number,
+  type: '图文瓶' | '图片瓶' | '文本瓶' | '语音瓶'
+}
+
 export function apply(ctx: Context, config: Config) {
   /** 漂流瓶内容 */
   type DiftContent = {
@@ -98,7 +106,9 @@ export function apply(ctx: Context, config: Config) {
     /** 发送者 */
     userId?: string,
     /** 发送者名字 */
-    username?: string
+    username?: string,
+    /** 是否删除 */
+    isDel?: boolean
   }
 
   /** 漂流瓶信息 */
@@ -124,7 +134,6 @@ export function apply(ctx: Context, config: Config) {
     /** 评论 */
     review: DiftContent[]
   }
-
 
   /** 下载工具集合 */
   const downloadUilts = {
@@ -200,16 +209,17 @@ export function apply(ctx: Context, config: Config) {
   // 指令冷却
   const cooling = {
     userIdList: {},
-    check(userId: string, type: UseType) {
+    check(userId: string, type: UseType): [boolean, number] {
       if (!this.userIdList[userId]) {
         this.userIdList[userId] = { 0: 0, 1: 0, 2: 0 }
       }
       const now = +new Date()
       if (now - this.userIdList[userId][type] < timeList[type]) {
-        return false
+        const needTime = timeList[type] - (now - this.userIdList[userId][type])
+        return [false, needTime]
       } else {
         this.userIdList[userId][type] = now
-        return true
+        return [true, 0]
       }
     }
   }
@@ -228,7 +238,9 @@ export function apply(ctx: Context, config: Config) {
     /** 瓶子被管理员封禁 */
     SHANCHU = 5,
     /** 瓶子被管理员解封 */
-    JIEFENG = 6
+    JIEFENG = 6,
+    /** 评论被封禁 */
+    PLFENGJIN = 7
   }
 
   /** 日志项信息 */
@@ -361,6 +373,9 @@ export function apply(ctx: Context, config: Config) {
           break;
         case logType.JIEFENG:
           temp.info = `<img src="${temp.myUserPic}" />你ID为<span>${logItem.bottleId}</span>的<span>${logItem.bottleType}</span>的瓶子被管理员<img src="${temp.userPic}" />解封`
+          break;
+        case logType.PLFENGJIN:
+          temp.info = `<img src="${temp.myUserPic}" />你在ID为<span>${logItem.bottleId}</span>的<span>${logItem.bottleType}</span>的中的一条留言被${config.adminQQ.includes(logItem.userId) ? '管理员' : '瓶子作者'}<img src="${temp.userPic}" />屏蔽`
           break;
         default:
           temp.info = `<img src="${temp.userPic}" />发生了一些不为人知的事情，无从考究`
@@ -561,6 +576,76 @@ export function apply(ctx: Context, config: Config) {
       })
       await session.send(`处理成功，已关闭显示 id:${id} 的` + this.driftbottleType(selectContent))
     },
+    /** 管理员删除留言 */
+    async delCommentByIdAndIndex(session: Session, id: number) {
+      if (!config.allowDelOfAuthor) {
+        if (!config.adminQQ.includes(session.userId)) {
+          await session.send(`您并未管理员，无权操作...`)
+          return
+        }
+      }
+
+      const allContent: DiftInfo[] = [].concat(...Object.values(this.userTempList))
+      const selectContent: DiftInfo = allContent.find((item) => item.id == id)
+      if (!selectContent) {
+        await session.send(`查找失败，没有找到对应id为 ${id} 的瓶子`)
+        return
+      }
+
+      if (config.allowDelOfAuthor) {
+        if (!(selectContent.userId == session.userId || config.adminQQ.includes(session.userId))) {
+          await session.send(`您不是该瓶子的主人，无权在此瓶子中执行删除留言操作。`)
+          return
+        }
+      }
+      if (!selectContent.review.length) {
+        await session.send(`Id为 ${id} 的瓶子下并没有任何留言。无需操作。`)
+        return
+      }
+      const commentHtml = await ctx.puppeteer.render(createHTML.reovmeCommentMap(selectContent, config.botId, session.platform !== 'qq'))
+      await session.send(commentHtml + `请在20秒选择要删除的留言下标，(多个下标可使用 , 隔开)\n`)
+      const _delIndex = await session.prompt(20000)
+      if (_delIndex == undefined) {
+        await session.send('操作超时，结束处理')
+        return
+      }
+      let delIndex = _delIndex.split(',').map((item) => {
+        if (isNaN(Number(item))) {
+          return null
+        }
+        const selectIndex = Math.floor(Number(item)) - 1
+        if (selectIndex < 0 || selectIndex >= selectContent.review.length) {
+          return null
+        }
+        return selectIndex
+      }).filter((item) => item !== null)
+
+      if (!delIndex.length) {
+        await session.send(`未命中任意留言下标，主动操作结束。`)
+        return
+      }
+
+      const dict = []
+
+      delIndex.forEach((item) => {
+        if (selectContent.review[item].isDel) {
+          dict.push(`[×] 下标 ${item + 1} 留言已经是删除状态，无需操作！`)
+          return
+        }
+        // 为目标添加评论屏蔽日志
+        logs.addLogForEvent(selectContent.review[item].userId, {
+          type: logType.PLFENGJIN,
+          userId: session.userId,
+          bottleId: selectContent.id,
+          bottleType: this.driftbottleType(selectContent)
+        })
+        dict.push(`[√] 成功删除下标 ${item + 1} 留言！`)
+        selectContent.review[item].isDel = true
+      })
+
+      this.updateStoreUser(selectContent.userId)
+      await session.send(`操作结果：\n\n${dict.join('\n')}`)
+    },
     /** 解封漂流瓶 */
     async openCententById(session: Session, id: number) {
       if (!config.adminQQ.includes(session.userId)) {
@@ -737,10 +822,9 @@ export function apply(ctx: Context, config: Config) {
       if (!this.historyTempList[userId]) {
         this.historyTempList[userId] = []
       }
-      if (!this.historyTempList[userId].includes(id)) {
-        this.historyTempList[userId].push(id)
-        await this.updateStoreHistory(userId)
-      }
+      this.historyTempList[userId] = this.historyTempList[userId].filter((item: number) => item != id)
+      this.historyTempList[userId].push(id)
+      await this.updateStoreHistory(userId)
     },
     /** 获得指定瓶子 */
     async GetDriftContentById(session: Session, id: number) {
@@ -851,6 +935,34 @@ export function apply(ctx: Context, config: Config) {
         (reviewContent.length ? `你一共评论过${reviewContent.length}个漂流瓶\n` : '你却也还没评论过任何一个漂流瓶。')
 
       return msg
+    },
+    /** 获取用户历史获取瓶子记录 */
+    async getHistoryFormatData(session: Session) {
+      const userId = session.userId
+      const historyData = this.historyTempList[userId]
+      if (!historyData?.length) {
+        await session.send('你还没有捞过任何瓶子，请发送 /捞漂流瓶 来获取第一个瓶子吧！')
+        return
+      }
+      await session.send('稍等，正在获取用户拾取过的瓶子记录...')
+      // 获取所有数据
+      const allDriftbottleList = [].concat(...Object.values(this.userTempList)) as DiftInfo[]
+      // 装载瓶子信息
+      const historyDetailList: HistoryInfoList[] = historyData.map((id: number) => {
+        const d_item = allDriftbottleList.find((i) => i.id == id)
+        if (d_item) {
+          return {
+            userId: d_item.userId,
+            id,
+            type: driftbottle.driftbottleType(d_item)
+          }
+        } else {
+          return null
+        }
+      }).filter((item: any) => item).reverse();
+      const htmlstr = createHTML.historyDriftbottleMap(historyDetailList.slice(0, 49).filter(item => item), config.botId, config.onbotAvatar, historyDetailList.length)
+      const html = await ctx.puppeteer.render(htmlstr)
+      await session.send(html)
     },
     /** 瓶子类型判断 */
     driftbottleType(temp: DiftInfo) {
@@ -1047,10 +1159,11 @@ export function apply(ctx: Context, config: Config) {
     .command('漂流瓶')
 
   ctx
-    .command('漂流瓶/捞漂流瓶 <num:number>')
+    .command('漂流瓶/捞漂流瓶 <num:number>', '从大海中随机获得一个瓶子')
     .action(async ({ session }, num) => {
-      if (!cooling.check(session.userId, UseType.LaoPingZi)) {
-        return `你捞瓶子的频率太快，请等${config.scoopWaitTime}秒`
+      const type = cooling.check(session.userId, UseType.LaoPingZi)
+      if (!type[0]) {
+        return `你捞瓶子的频率太快，请等${Math.ceil(type[1] / 1000)}秒`
       }
       num = num && Math.abs(Math.floor(num))
       if (num) {
@@ -1061,10 +1174,11 @@ export function apply(ctx: Context, config: Config) {
     })
 
   ctx
-    .command('漂流瓶/留言 <pid:number> <msg:text>')
+    .command('漂流瓶/留言 <pid:number> <msg:text>', '对指定id的瓶子进行留言')
     .action(async ({ session }, pid, msg) => {
-      if (!cooling.check(session.userId, UseType.LiuYan)) {
-        return `你留言的频率太快，请等${config.leaveMsgWaitTime}秒`
+      const type = cooling.check(session.userId, UseType.LiuYan)
+      if (!type[0]) {
+        return `你留言的频率太快，请等${Math.ceil(type[1] / 1000)}秒`
       }
       if (pid == undefined) {
         return `发送失败，请先填写需要留言的漂流瓶的对应 id\n例如：留言 1 这是内容`
@@ -1074,10 +1188,11 @@ export function apply(ctx: Context, config: Config) {
     })
 
   ctx
-    .command('漂流瓶/扔漂流瓶 <msgContent:text>')
+    .command('漂流瓶/扔漂流瓶 <msgContent:text>', '将内容存瓶子丢向大海')
     .action(async ({ session }, msgContent) => {
-      if (!cooling.check(session.userId, UseType.RenPingZi)) {
-        return `你扔瓶子的频率太快，请等${config.throwWaitTime}秒`
+      const type = cooling.check(session.userId, UseType.RenPingZi)
+      if (!type[0]) {
+        return `你扔瓶子的频率太快，请等${Math.ceil(type[1] / 1000)}秒`
       }
       let res = msgContent || ''
 
@@ -1114,7 +1229,7 @@ export function apply(ctx: Context, config: Config) {
     })
 
   ctx
-    .command('漂流瓶/封漂流瓶 <pid:number>')
+    .command('漂流瓶/封漂流瓶 <pid:number>', '封禁指定id漂流瓶')
     .action(async ({ session }, pid) => {
       if (pid == undefined) {
         return `确认你是否携带id参数`
@@ -1124,7 +1239,7 @@ export function apply(ctx: Context, config: Config) {
     })
 
   ctx
-    .command('漂流瓶/解漂流瓶 <pid:number>')
+    .command('漂流瓶/解漂流瓶 <pid:number>', '为目标id漂流瓶解封')
     .action(async ({ session }, pid) => {
       if (pid == undefined) {
         return `确认你是否携带id参数`
@@ -1134,23 +1249,45 @@ export function apply(ctx: Context, config: Config) {
     })
 
   ctx
-    .command('漂流瓶/漂流瓶统计')
+    .command('漂流瓶/漂流瓶统计', '对瓶子生态进行统计')
     .action(async ({ session }) => {
       return driftbottle.driftbottleTatistics(session)
     })
 
   const waitLog = {}
+  const historyLog = {}
 
   ctx
-    .command('漂流瓶/漂流瓶日志')
+    .command('漂流瓶/漂流瓶日志', '查看漂流瓶历史日志')
     .action(async ({ session }) => {
       if (waitLog[session.userId]) {
-        session.send('请等待请求完成')
+        await session.send('请等待请求完成')
         return
       }
       waitLog[session.userId] = true
       await session.send('稍等，正在获取日志信息...')
       await session.send(await logs.getUserLogsList(session.userId))
       waitLog[session.userId] = false
+    })
+
+  ctx
+    .command('漂流瓶/删留言 <bottleId:number>', '对指定评论进行删除')
+    .action(async ({ session }, bottleId) => {
+      if (bottleId == undefined) {
+        return `确认你是否携带瓶子id参数，例如 /删留言 瓶子id`
+      }
+      driftbottle.delCommentByIdAndIndex(session, bottleId)
+    })
+
+  ctx
+    .command('漂流瓶/查看瓶子记录', '查看自己获得过的瓶子')
+    .action(async ({ session }) => {
+      if (historyLog[session.userId]) {
+        await session.send('请等待请求完成')
+        return
+      }
+      historyLog[session.userId] = true
+      await driftbottle.getHistoryFormatData(session)
+      historyLog[session.userId] = false
     })
 }
