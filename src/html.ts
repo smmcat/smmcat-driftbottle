@@ -116,6 +116,8 @@ export const createHTML = {
           font-size: 26px;
           color: #555;
           text-align: left;
+          word-wrap: break-word;
+          white-space: pre-wrap;
           padding-left: 10px;
           margin: 0;
       }
@@ -343,6 +345,8 @@ body {
    color:rgb(128, 9, 9);
    border:1px dashed #ccc;
    padding: 5px 10px;
+   word-wrap: break-word;
+   white-space: pre-wrap;
 }
 
 /* 图片内容样式 */

@@ -15,6 +15,7 @@ export interface Config {
   adminQQ: Array<string>
   basePath: string
   dataPath: string
+  autoCorrectionPath: boolean
   deBug: boolean
   historyPath: string
   logsPath: string
@@ -45,6 +46,7 @@ export const Config: Schema<Config> = Schema.object({
   botId: Schema.string().description('qqbot的id (由于不会写自动获取需要手动，后续版本自动)'),
   adminQQ: Schema.array(String).role('table').description('管理员QQ 可查指定id内容，删除瓶子'),
   onbotAvatar: Schema.boolean().default(false).description('头像+网名获取兼容第三方QQ机器人适配'),
+  autoCorrectionPath: Schema.boolean().default(true).description('自动矫正多媒体文件存放位置'),
   styleType: Schema.union([
     Schema.const(0).description('记事本'),
     Schema.const(1).description('蓝色简约'),
@@ -282,7 +284,8 @@ export function apply(ctx: Context, config: Config) {
       const eventList = fs.readdirSync(this.basePath).map((item) => {
         return new Promise(async (resolve, rejects) => {
           try {
-            temp[item] = JSON.parse(await ctx.localstorage.getItem(`${config.logsPath}/${item}`))
+            const localData = JSON.parse(await ctx.localstorage.getItem(`${config.logsPath}/${item}`))
+            temp[item] = localData
             dict.ok++
             resolve(true)
           } catch (error) {
@@ -419,13 +422,46 @@ export function apply(ctx: Context, config: Config) {
       if (!fs.existsSync(this.historyPath)) {
         fs.mkdirSync(this.historyPath, { recursive: true });
       }
-      const dict = { data: { ok: 0, err: 0 }, history: { ok: 0, err: 0 } }
+      const dict = { data: { ok: 0, err: 0 }, history: { ok: 0, err: 0 }, path: { image: 0, audio: 0 } }
       const temp: { [key: string]: DiftInfo[] } = {}
       const historyTemp = {}
       const eventList = fs.readdirSync(this.basePath).map((item: string) => {
         return new Promise(async (reslove, rejects) => {
           try {
-            temp[item] = JSON.parse(await ctx.localstorage.getItem(`${config.dataPath}/${item}`))
+            const userTemp = JSON.parse(await ctx.localstorage.getItem(`${config.dataPath}/${item}`))
+
+            if (config.autoCorrectionPath) {
+              // 修复文件路径问题
+              userTemp.forEach((item: DiftInfo) => {
+                // 重置内容区域的图片地址
+                if (item.content.image?.length) {
+                  item.content.image = item.content.image.map((img: string) => {
+                    dict.path.image++
+                    return pathToFileURL(path.join(config.basePath, 'image', path.basename(img))).href
+                  })
+                }
+                // 重置内容区域的音频地址
+                if (item.content.audio?.length) {
+                  item.content.audio = item.content.audio.map((url: string) => {
+                    dict.path.audio++
+                    return pathToFileURL(path.join(config.basePath, 'audio', path.basename(url))).href
+                  })
+                }
+                // 重置评论区域的图片地址
+                if (item.review?.length) {
+                  item.review.forEach((review) => {
+                    if (review.image) {
+                      review.image = review.image.map((img) => {
+                        dict.path.image++
+                        return pathToFileURL(path.join(config.basePath, 'image', path.basename(img))).href
+                      })
+                    }
+                  })
+                }
+              })
+            }
+
+            temp[item] = userTemp
             dict.data.ok++
             reslove(true)
           } catch (error) {
@@ -450,6 +486,7 @@ export function apply(ctx: Context, config: Config) {
       })
       await Promise.all(eventList)
       config.deBug && console.log(`漂流瓶数据加载完成，一共加载成功${dict.data.ok}个用户数据，失败:${dict.data.err}个`);
+      config.deBug && config.autoCorrectionPath && console.log(`*本地媒体文件路径自动矫正，一共有图片${dict.path.image}个,音频${dict.path.audio}个*`);
       await Promise.all(historyEventList)
       config.deBug && console.log(`历史数据加载完成，一共加载成功${dict.history.ok}个用户数据，失败:${dict.history.err}个`);
       // config.deBug && console.log(JSON.stringify(temp, null, ' '));
@@ -1197,14 +1234,14 @@ export function apply(ctx: Context, config: Config) {
       let res = msgContent || ''
 
       if (!res.trim()) {
-        await session.send('(*/ω＼*) 您正在尝试丢出一个瓶子，请在20秒内发送你瓶子里的内容。')
-        res = await session.prompt(20000)
+        await session.send('(*/ω＼*) 您正在尝试丢出一个瓶子，请在60秒内发送你瓶子里的内容。')
+        res = await session.prompt(60000)
       }
       if (res && res.trim()) {
         // 判断是否需要添加图片内容
         if (h.select(res, 'aduio').length == 0 && h.select(res, 'img').length == 0) {
-          await session.send('(￣y▽￣)╭ 似乎没有携带图片，这对其他用户可能阅读上有些单调；需要为漂流瓶配图吗？请在10秒内发送图片作为补充内容\n不需要则发：否')
-          let imgTemp = await session.prompt(10000)
+          await session.send('(￣y▽￣)╭ 似乎没有携带图片，这对其他用户可能阅读上有些单调；需要为漂流瓶配图吗？请在20秒内发送图片作为补充内容\n不需要则发：否')
+          let imgTemp = await session.prompt(20000)
           let imgList = imgTemp ? h.select(imgTemp, 'img').map((item) => h.image(item.attrs.src)) : null
           // 添加图片
           if (imgList?.length) {
@@ -1215,7 +1252,7 @@ export function apply(ctx: Context, config: Config) {
             }
           }
         }
-        await session.send('(´▽`ʃ♡ƪ) 是否要为该瓶子起一个标题？请在10秒内发送，不需要则发：否')
+        await session.send('(´▽`ʃ♡ƪ) 是否要为该瓶子起一个标题？请在20秒内发送，不需要则发：否')
         let title = await session.prompt(20000)
         if (title && title.trim() !== '否') {
           title = h.select(title, 'text')[0]?.attrs.content
