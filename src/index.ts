@@ -7,6 +7,7 @@ import crypto from 'crypto'
 import { pathToFileURL } from 'url'
 import path from 'path'
 import fs from 'fs'
+import { BottleContent, CommentContent, webBottle } from './webBottle'
 
 export const name = 'smmcat-driftbottle'
 
@@ -1190,6 +1191,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.on('ready', () => {
     driftbottle.init()
     logs.init()
+    webBottle.init(ctx, config)
   })
 
   ctx
@@ -1203,6 +1205,7 @@ export function apply(ctx: Context, config: Config) {
         return `你捞瓶子的频率太快，请等${Math.ceil(type[1] / 1000)}秒`
       }
       num = num && Math.abs(Math.floor(num))
+
       if (num) {
         return await driftbottle.GetDriftContentById(session, num)
       } else {
@@ -1326,5 +1329,92 @@ export function apply(ctx: Context, config: Config) {
       historyLog[session.userId] = true
       await driftbottle.getHistoryFormatData(session)
       historyLog[session.userId] = false
+    })
+
+  ctx
+    .command('漂流瓶/捞云漂流瓶 <num:number>')
+    .action(async ({ session }, num) => {
+      const type = cooling.check(session.userId, UseType.LaoPingZi)
+      if (!type[0]) {
+        return `你捞瓶子的频率太快，请等${Math.ceil(type[1] / 1000)}秒`
+      }
+      num = num && Math.abs(Math.floor(num))
+      const web_bottle = await webBottle.getWebBottleData(session, num)
+      if (web_bottle) {
+        const img = await ctx.puppeteer.render(createHTML.generateBottleHTML(web_bottle))
+        return img + `可使用 /云留言 ${num} 想回复的内容 对瓶子进行留言操作！`
+      } else {
+        return '获取失败...' + (num !== undefined ? `可能原因：无该id${num} 下的瓶子` : '')
+      }
+    })
+
+  ctx
+    .command('漂流瓶/扔云漂流瓶 <msgContent:text>', '瓶子将扔向更广阔的大海')
+    .action(async ({ session }, msgContent) => {
+      const type = cooling.check(session.userId, UseType.RenPingZi)
+      if (!type[0]) {
+        return `你扔瓶子的频率太快，请等${Math.ceil(type[1] / 1000)}秒`
+      }
+      let res = msgContent || ''
+      let imgList = []
+      let title = ''
+
+      if (!res.trim()) {
+        await session.send('呼呼，您正在尝试向更远的海洋丢出瓶子。这个瓶子将会出现在更多的地方！\n请在60秒内填写自己需要发表的内容。')
+        res = await session.prompt(60000)
+      }
+      if (res && res.trim()) {
+        // 判断是否需要添加图片内容
+        if (h.select(res, 'img').length == 0) {
+          await session.send('需要为该瓶子进行配图吗？请在20秒内发送图片作为补充内容\n不需要则发：否')
+          let imgTemp = await session.prompt(20000)
+          if (imgTemp !== undefined && imgTemp.trim() !== '否') {
+            imgList = imgTemp ? h.select(imgTemp, 'img').map((item) => h.image(item.attrs.src)) : []
+            // 添加图片
+            if (imgList.length == 0) {
+              await session.send('(；′⌒`) 啊...没检测到图片，图片上传失败')
+            }
+          }
+        } else {
+          imgList = h.select(res, 'img').map((item) => item.attrs.src)
+        }
+
+        await session.send('需要为该瓶子起一个标题？请在20秒内发送，不需要则发：否')
+        const temp_title = await session.prompt(20000)
+        if (temp_title && temp_title.trim() !== '否') {
+          title = h.select(temp_title, 'text')[0]?.attrs.content
+        }
+        res = h.select(res, 'text')[0]?.attrs.content
+        const temp: BottleContent = {
+          content: {
+            title,
+            text: res,
+            image: imgList
+          },
+          userId: session.userId
+        }
+        await session.send('请稍等，正在委托船夫驶向远方的大海...')
+        const result = await webBottle.setBottleData(session, temp)
+        if (result !== -1) {
+          return `你的瓶子成功丢进了更深的大海。追踪的ID为：${result}`
+        }
+        return '扔出失败...'
+      }
+    })
+
+  ctx
+    .command('漂流瓶/云留言 <pid:number> <content:text>')
+    .action(async ({ session }, pid, content) => {
+      const type = cooling.check(session.userId, UseType.LiuYan)
+      if (!type[0]) {
+        return `你留言的频率太快，请等${Math.ceil(type[1] / 1000)}秒`
+      }
+      if (pid == undefined) {
+        return `发送失败，请先填写需要留言的漂流瓶的对应 id\n例如：云留言 1 这是内容`
+      }
+      pid = Math.abs(Math.floor(pid))
+      const text = h.select(content, 'text')[0]?.attrs.content
+      const temp: CommentContent = { text, userId: session.userId, platform: session.platform }
+      return await webBottle.setCommentData(session, pid, temp)
     })
 }

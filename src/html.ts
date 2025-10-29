@@ -1,4 +1,5 @@
 import { HistoryInfoList } from "."
+import { WebBottleData } from "./webBottle"
 
 /** 漂流瓶内容 */
 type DiftContent = {
@@ -1002,7 +1003,282 @@ body {
 
 </html>
         `
+    },
+    generateBottleHTML(data: WebBottleData) {
+        // 格式化时间戳
+        function formatTime(timestamp) {
+            const date = new Date(timestamp);
+            return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+        }
+
+        // 生成评论列表HTML
+        let commentsHTML = '';
+        if (data.review && data.review.length > 0) {
+            commentsHTML = data.review.map(comment => `
+            <div class="item">
+                <div class="comment-avatar">
+                    <img src="${comment.avatar}">
+                </div>
+                <div class="comment-content">
+                    <div class="comment-text">${comment.text}</div>
+                    <div class="comment-time">${formatTime(comment.createTime)}</div>
+                </div>
+            </div>
+        `).join('');
+        }
+
+        // 生成图片列表HTML
+        let imagesHTML = '';
+        if (data.content.image && data.content.image.length > 0) {
+            imagesHTML = data.content.image.map(img => `
+            <img src="${img}" alt="漂流瓶图片">
+        `).join('');
+        }
+
+        return `
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>漂流瓶</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+        }
+
+        body, html {
+            width: 600px;
+            min-height: 400px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            padding: 15px;
+        }
+
+        .bottle-container {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        .title {
+            background: linear-gradient(90deg, #66ccff 0%, #4da6ff 100%);
+            color: white;
+            padding: 12px 20px;
+            text-align: center;
+            position: relative;
+        }
+
+        .title h3 {
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+
+        .title::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.7) 50%, transparent 100%);
+        }
+
+        .content {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            margin-bottom: 15px;
+        }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            overflow: hidden;
+            margin-right: 12px;
+            border: 2px solid #e6f7ff;
+        }
+
+        .avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .user-details {
+            flex: 1;
+        }
+
+        .user-id {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 2px;
+        }
+
+        .time {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .text-content {
+            width: 100%;
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            line-height: 1.6;
+            color: #333;
+            border-left: 4px solid #66ccff;
+        }
+
+        .text-content img {
+            max-width: 250px;
+        }
+
+        .img-list {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+        }
+
+        .img-list img {
+            max-width: 250px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .comment {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .comment h3 {
+            background: linear-gradient(90deg, #ff9966 0%, #ff5e62 100%);
+            color: white;
+            padding: 12px 20px;
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+
+        .comment-list {
+            padding: 15px;
+        }
+
+        .item {
+            display: flex;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .item:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .comment-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            overflow: hidden;
+            margin-right: 12px;
+            flex-shrink: 0;
+            border: 2px solid #ffe6e6;
+        }
+
+        .comment-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .comment-content {
+            flex: 1;
+            background-color: #f8f9fa;
+            padding: 12px;
+            border-radius: 8px;
+            position: relative;
+        }
+
+        .comment-content::before {
+            content: '';
+            position: absolute;
+            left: -8px;
+            top: 12px;
+            width: 0;
+            height: 0;
+            border-top: 8px solid transparent;
+            border-bottom: 8px solid transparent;
+            border-right: 8px solid #f8f9fa;
+        }
+
+        .comment-text {
+            color: #333;
+            line-height: 1.5;
+            margin-bottom: 5px;
+        }
+
+        .comment-time {
+            font-size: 11px;
+            color: #999;
+            text-align: right;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="bottle-container">
+        <div class="title">
+            <h3>早上好 #ID ${data.id}</h3>
+        </div>
+        <div class="content">
+            <div class="user-info">
+                <div class="avatar">
+                    <img src="${data.content.avatar}">
+                </div>
+                <div class="user-details">
+                    <div class="user-id">用户ID: ${data.content.userId.slice(0, 4) + '...'}</div>
+                    <div class="time">发布时间: ${formatTime(data.content.createTime)}</div>
+                </div>
+            </div>
+            <div class="text-content">
+                ${data.content.text}
+            </div>
+            <div class="img-list">
+                ${imagesHTML}
+            </div>
+        </div>
+    </div>
+    
+    <div class="comment">
+        <h3>评论区 (${data.review ? data.review.length : 0})</h3>
+        <div class="comment-list">
+            ${commentsHTML || '<div style="text-align:center;padding:20px;color:#999;">暂无评论</div>'}
+        </div>
+    </div>
+</body>
+</html>`;
     }
+
 }
 
 const uilts = {
