@@ -1339,10 +1339,11 @@ export function apply(ctx: Context, config: Config) {
         return `你捞瓶子的频率太快，请等${Math.ceil(type[1] / 1000)}秒`
       }
       num = num && Math.abs(Math.floor(num))
+      session.send('稍等，正在向远处的大海祈祷...')
       const web_bottle = await webBottle.getWebBottleData(session, num)
       if (web_bottle) {
         const img = await ctx.puppeteer.render(createHTML.generateBottleHTML(web_bottle))
-        return img + `可使用 /云留言 ${num} 想回复的内容 对瓶子进行留言操作！`
+        return img + `可使用 /云留言 ${web_bottle.id} 想回复的内容 对瓶子进行留言操作！`
       } else {
         return '获取失败...' + (num !== undefined ? `可能原因：无该id${num} 下的瓶子` : '')
       }

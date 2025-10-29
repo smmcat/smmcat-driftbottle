@@ -1248,7 +1248,7 @@ body {
 <body>
     <div class="bottle-container">
         <div class="title">
-            <h3>早上好 #ID ${data.id}</h3>
+            <h3>${data.content.title} #ID ${data.id}</h3>
         </div>
         <div class="content">
             <div class="user-info">
