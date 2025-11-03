@@ -216,20 +216,18 @@ export const webBottle = {
 
 // 添加更多信息
 function addMoreData(bottleData: WebBottleData) {
-    if (bottleData.platform == 'qq') {
-        bottleData.content.avatar = getPic({
-            botId: bottleData.botId,
-            platform: bottleData.platform,
-            userId: bottleData.userId
+    bottleData.content.avatar = getPic({
+        botId: bottleData.botId,
+        platform: bottleData.platform,
+        userId: bottleData.userId
+    })
+    bottleData.review.forEach((review) => {
+        review.avatar = getPic({
+            botId: review.botId,
+            platform: review.platform,
+            userId: review.userId
         })
-        bottleData.review.forEach((review) => {
-            review.avatar = getPic({
-                botId: review.botId,
-                platform: review.platform,
-                userId: review.userId
-            })
-        })
-    }
+    })
     return bottleData
 }
 
