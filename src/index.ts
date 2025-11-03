@@ -32,7 +32,8 @@ export interface Config {
   filter: Array<string>
   textfilter: Array<string>
   onbotAvatar: boolean,
-  allowDelOfAuthor: boolean
+  allowDelOfAuthor: boolean,
+  webFilingPath: string
 }
 
 export const inject = ['localstorage', 'puppeteer']
@@ -56,6 +57,7 @@ export const Config: Schema<Config> = Schema.object({
   dataPath: Schema.string().default('smm-driftbottle').description('用户数据命名空间 (在 /data/localstorage 文件夹下)'),
   historyPath: Schema.string().default('smm-driftbottle-history').description('用户获得瓶子的数据命名空间 (在 /data/localstorage 文件夹下)'),
   logsPath: Schema.string().default('smmcat-driftbottle-logs').description('用户日志的数据命名空间 (在 /data/localstorage 文件夹下)'),
+  webFilingPath: Schema.string().default('smmcat-driftbottle-upload').description('用户上传到服务器的数据命名空间 (在 /data/localstorage 文件夹下)'),
   allowDelOfAuthor: Schema.boolean().default(true).description('允许漂流瓶的作者删除瓶子下的评论'),
   logsNum: Schema.number().default(20).description('日志最大显示数量'),
   throwWaitTime: Schema.number().default(20000).description('扔漂流瓶的等待时间'),
@@ -96,9 +98,7 @@ export type HistoryInfoList = {
   id: number,
   type: '图文瓶' | '图片瓶' | '文本瓶' | '语音瓶'
 }
-
-export function apply(ctx: Context, config: Config) {
-  /** 漂流瓶内容 */
+export  /** 漂流瓶内容 */
   type DiftContent = {
     /** 创建时间 */
     creatTime: number,
@@ -114,29 +114,33 @@ export function apply(ctx: Context, config: Config) {
     isDel?: boolean
   }
 
-  /** 漂流瓶信息 */
-  type DiftInfo = {
-    /** 瓶子编号 */
-    id: number,
-    /** 样式风格 */
-    style: number,
-    /** 内容 */
-    content: DiftContent & {
-      /** 音频 */
-      audio: string[] | null,
-      /** 标题 */
-      title: string | null,
-    },
-    /** 被捞次数 */
-    getCount: number,
-    /** 允许显示 */
-    show: boolean,
-    /** 发送者 */
-    userId: string,
-    username?: string,
-    /** 评论 */
-    review: DiftContent[]
-  }
+/** 漂流瓶信息 */
+export type DiftInfo = {
+  /** 瓶子编号 */
+  id: number,
+  /** 样式风格 */
+  style: number,
+  /** 内容 */
+  content: DiftContent & {
+    /** 音频 */
+    audio: string[] | null,
+    /** 标题 */
+    title: string | null,
+  },
+  /** 被捞次数 */
+  getCount: number,
+  /** 允许显示 */
+  show: boolean,
+  /** 发送者 */
+  userId: string,
+  username?: string,
+  /** 评论 */
+  review: DiftContent[]
+}
+export function apply(ctx: Context, config: Config) {
+
+
+
 
   /** 下载工具集合 */
   const downloadUilts = {
@@ -864,6 +868,10 @@ export function apply(ctx: Context, config: Config) {
       this.historyTempList[userId].push(id)
       await this.updateStoreHistory(userId)
     },
+    // 获取所有可用瓶子
+    GetAllBottle(): DiftInfo[] {
+      return [].concat(...Object.values(this.userTempList))
+    },
     /** 获得指定瓶子 */
     async GetDriftContentById(session: Session, id: number) {
 
@@ -1339,13 +1347,13 @@ export function apply(ctx: Context, config: Config) {
         return `你捞瓶子的频率太快，请等${Math.ceil(type[1] / 1000)}秒`
       }
       num = num && Math.abs(Math.floor(num))
-      session.send('稍等，正在向远处的大海祈祷...')
-      const web_bottle = await webBottle.getWebBottleData(session, num)
-      if (web_bottle) {
-        const img = await ctx.puppeteer.render(createHTML.generateBottleHTML(web_bottle))
-        return img + `可使用 /云留言 ${web_bottle.id} 想回复的内容 对瓶子进行留言操作！`
+      await session.send('稍等，正在向远处的大海祈祷...')
+      const { code, data } = await webBottle.getWebBottleData(session, num)
+      if (code) {
+        const img = await ctx.puppeteer.render(createHTML.generateBottleHTML(data))
+        return img + `可使用 /云留言 ${data.id} 想回复的内容 对瓶子进行留言操作！`
       } else {
-        return '获取失败...' + (num !== undefined ? `可能原因：无该id${num} 下的瓶子` : '')
+        return '获取失败...\n' + data
       }
     })
 
@@ -1411,11 +1419,17 @@ export function apply(ctx: Context, config: Config) {
         return `你留言的频率太快，请等${Math.ceil(type[1] / 1000)}秒`
       }
       if (pid == undefined) {
-        return `发送失败，请先填写需要留言的漂流瓶的对应 id\n例如：云留言 1 这是内容`
+        return `发送失败，请先填写需要留言的漂流瓶的对应 id\n例如：/云留言 1 这是内容`
       }
       pid = Math.abs(Math.floor(pid))
       const text = h.select(content, 'text')[0]?.attrs.content
       const temp: CommentContent = { text, userId: session.userId, platform: session.platform }
       return await webBottle.setCommentData(session, pid, temp)
+    })
+
+  ctx
+    .command('漂流瓶/批量上传云漂流瓶')
+    .action(async ({ session }) => {
+      webBottle.uploadWebBottleData(session, driftbottle.GetAllBottle())
     })
 }

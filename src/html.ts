@@ -1141,6 +1141,7 @@ body {
             margin-bottom: 15px;
             line-height: 1.6;
             color: #333;
+            white-space: pre-wrap;
             border-left: 4px solid #66ccff;
         }
 
@@ -1256,13 +1257,11 @@ body {
                     <img src="${data.content.avatar}">
                 </div>
                 <div class="user-details">
-                    <div class="user-id">用户ID: ${data.content.userId.slice(0, 4) + '...'}</div>
+                    <div class="user-id">用户ID: ${data.content.userId?.slice(0, 4) + '...'}</div>
                     <div class="time">发布时间: ${formatTime(data.content.createTime)}</div>
                 </div>
             </div>
-            <div class="text-content">
-                ${data.content.text}
-            </div>
+            <div class="text-content">${data.content.text}</div>
             <div class="img-list">
                 ${imagesHTML}
             </div>

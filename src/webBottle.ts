@@ -1,5 +1,8 @@
 import { Context, Session } from "koishi";
-import { Config } from ".";
+import { Config, DiftInfo } from ".";
+import path from 'path'
+import fs from 'fs/promises'
+import { fileURLToPath } from "url";
 
 type Token = {
     [key: string]: string;
@@ -94,10 +97,10 @@ export const webBottle = {
                 this.baseUrl + '/random',
                 { params: { id }, headers: { 'Authorization': webBottle.setToken(session) } }
             )
-            return addMoreData(result.data)
+            return { code: true, data: addMoreData(result.data) }
         } catch (error) {
             console.log(error.response.data?.msg);
-            return null
+            return { code: false, data: error.response.data?.msg || '打捞失败' }
         }
     },
     /** 扔出一个漂流瓶 */
@@ -128,6 +131,85 @@ export const webBottle = {
             return result.msg
         } catch (error) {
             return error.response.data?.msg
+        }
+    },
+    /** 上传数据到服务器 */
+    async uploadWebBottleData(session: Session, bottleDataTemp: DiftInfo[]) {
+        try {
+            if (!webBottle.config.adminQQ?.includes(session.userId)) {
+                await session.send('您并非 bot管理员，无权操作')
+                return
+            }
+            await session.send('正在上传，可能需要耗费过多时间，请等待...')
+            const updatedId = JSON.parse(await (this.ctx as Context).localstorage.getItem(webBottle.config.webFilingPath) || '[]')
+            const bottleData = bottleDataTemp.filter(item => !updatedId.includes('' + item.id) || !item.content.audio)
+            if (!bottleData.length) {
+                await session.send('暂无需要同步上传服务器的最新数据')
+                return
+            }
+            await session.send(`已找到新的${bottleData.length}条数据。`)
+            await this.getToken(session)
+            const upId = []
+            const dict = { ok: 0, err: 0 }
+            const { platform, botId } = this.getBotInfo(session)
+            for (const bottle of bottleData) {
+                try {
+                    const base64ImgList = []
+                    if (Array.isArray(bottle.content?.image) && bottle.content.image.length) {
+                        for (const img of bottle.content.image) {
+                            const base64 = await fs.readFile(fileURLToPath(img), 'base64')
+                            const type = path.extname(fileURLToPath(img))
+                            base64ImgList.push({ base64, type })
+                        }
+                    }
+                    const reviewList = []
+                    if (Array.isArray(bottle.review) && bottle.review.length) {
+                        for (const review of bottle.review) {
+                            const review_base64ImgList = []
+                            if (Array.isArray(review?.image) && review.image.length) {
+                                for (const img of review.image) {
+                                    const base64 = await fs.readFile(fileURLToPath(img), 'base64')
+                                    const type = path.extname(img)
+                                    review_base64ImgList.push({ base64, type })
+                                }
+                            }
+                            reviewList.push({ ...review, platform, botId, image: review_base64ImgList })
+                        }
+                    }
+
+                    const temp = {
+                        privateId: bottle.id,
+                        botId,
+                        platform,
+                        content: {
+                            text: bottle.content?.text || '',
+                            title: bottle.content.title || '',
+                            userId: bottle.content.userId,
+                            platform,
+                            image: base64ImgList,
+                            botId
+                        },
+                        review: reviewList
+                    }
+                    const result = await (this.ctx as Context).http.post(
+                        this.baseUrl + '/import', { list: [temp] },
+                        { headers: { 'Authorization': webBottle.setToken(session), "Content-Type": "application/json; charset=utf-8" } }
+                    )
+                    console.log(`已成功上传ID为${bottle.id}的瓶子。对应服务器瓶子ID为：${result.ids}`);
+                    dict.ok++
+                    upId.push('' + bottle.id)
+                } catch (error) {
+                    console.log(error);
+                    dict.err++
+                    continue;
+                }
+            }
+            const lastUpdateId = updatedId.concat(upId)
+            await webBottle.ctx.localstorage.setItem(webBottle.config.webFilingPath, JSON.stringify(lastUpdateId))
+            await session.send(`已上传完成ID为${upId.length > 20 ? `${upId.slice(0, 20).join('、')}...的瓶子数据` : `${upId.join('、')}的瓶子数据`}`)
+        } catch (error) {
+            console.log(error);
+            await session.send(error.response.data?.msg || '未知错误')
         }
     }
 }
