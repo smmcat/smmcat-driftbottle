@@ -1021,7 +1021,7 @@ body {
                 </div>
                 <div class="comment-content">
                     <div class="comment-text">${comment.text}</div>
-                    <div class="comment-time">${formatTime(comment.createTime)}</div>
+                    <div class="comment-time">${formatTime(comment.createTime || comment.creatTime )}</div>
                 </div>
             </div>
         `).join('');
@@ -1215,7 +1215,7 @@ body {
         .comment-content {
             flex: 1;
             background-color: #f8f9fa;
-            padding: 12px;
+            padding: 5px 15px;
             border-radius: 8px;
             position: relative;
         }

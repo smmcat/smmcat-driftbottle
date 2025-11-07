@@ -24,6 +24,7 @@ export type WebBottleData = {
     },
     review: {
         createTime: number | string,
+        creatTime?: number | string,
         text: string,
         userId: string,
         botId: string,
@@ -133,28 +134,38 @@ export const webBottle = {
             return error.response.data?.msg
         }
     },
-    /** 上传数据到服务器 */
+    /** 上传数据到服务器喵 */
     async uploadWebBottleData(session: Session, bottleDataTemp: DiftInfo[]) {
         try {
+            // 超超简易安全模块 工作中！
             if (!webBottle.config.adminQQ?.includes(session.userId)) {
+                // 防小人提示
                 await session.send('您并非 bot管理员，无权操作')
                 return
             }
+            // 可能需要控制一下用户焦灼的情绪
             await session.send('正在上传，可能需要耗费过多时间，请等待...')
+            // 搜集数据中...
             const updatedId = JSON.parse(await (this.ctx as Context).localstorage.getItem(webBottle.config.webFilingPath) || '[]')
             const bottleData = bottleDataTemp.filter(item => !updatedId.includes('' + item.id) || !item.content.audio)
             if (!bottleData.length) {
                 await session.send('暂无需要同步上传服务器的最新数据')
                 return
             }
+            // MD！用户等急了 必须再安慰一下
             await session.send(`已找到新的${bottleData.length}条数据。`)
+            // 提交前需证明一下萝莉就是你自己
             await this.getToken(session)
             const upId = []
             const dict = { ok: 0, err: 0 }
+            // 啥东西，又要调一次？必须后期优化
             const { platform, botId } = this.getBotInfo(session)
+            // 瓶子里又塞二进制文件了，麻烦噎
             for (const bottle of bottleData) {
                 try {
+                    // 准备爆
                     const base64ImgList = []
+                    // 准备给它爆
                     if (Array.isArray(bottle.content?.image) && bottle.content.image.length) {
                         for (const img of bottle.content.image) {
                             const base64 = await fs.readFile(fileURLToPath(img), 'base64')
@@ -162,7 +173,9 @@ export const webBottle = {
                             base64ImgList.push({ base64, type })
                         }
                     }
+                    // 啥啊，评论区还支持插入图片
                     const reviewList = []
+                    // 证明有配图
                     if (Array.isArray(bottle.review) && bottle.review.length) {
                         for (const review of bottle.review) {
                             const review_base64ImgList = []
@@ -177,6 +190,7 @@ export const webBottle = {
                         }
                     }
 
+                    // 按着项目需求的结构去构建提交的资料
                     const temp = {
                         privateId: bottle.id,
                         botId,
@@ -204,6 +218,7 @@ export const webBottle = {
                     continue;
                 }
             }
+            // 来，处理后续的善后操作
             const lastUpdateId = updatedId.concat(upId)
             await webBottle.ctx.localstorage.setItem(webBottle.config.webFilingPath, JSON.stringify(lastUpdateId))
             await session.send(`已上传完成ID为${upId.length > 20 ? `${upId.slice(0, 20).join('、')}...的瓶子数据` : `${upId.join('、')}的瓶子数据`}`)
